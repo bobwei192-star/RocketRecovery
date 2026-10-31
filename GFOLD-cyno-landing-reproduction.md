@@ -178,3 +178,59 @@ pip install krpc numpy scipy
 - GFOLD 论文：http://www.larsblackmore.com/iee_tcst13.pdf （Blackmore et al., IEEE TCST）
 - kRPC 官方文档：http://krpc.github.io/krpc/
 - scipy.misc.logsumexp 移除：scipy 1.2.0 release notes（实测验证 import 失败/成功的两个版本）
+
+---
+
+## 6. kRPC 版本对齐方案（2026-10-31 实测）
+
+**问题**：三个项目分属三个年代（GFOLD_KSP 2020 / RocketRecoveryTutorial 2023 / cyno-landing 2026），能否统一用同一个 kRPC 版本复现？
+
+**结论：可以对齐到 kRPC 0.5.4（mod + Python 客户端同版本），KSP 用 1.12.5。GFOLD_KSP 只需一个 scipy 兼容 shim，已实测通过。**
+
+### 6.1 版本事实（依据 + 实测）
+
+| kRPC 版本 | 支持 KSP（官方 changelog） | Python 客户端要求 | 发布时间 |
+|---|---|---|---|
+| 0.4.8 | KSP 1.5.1 | 无限制（可装 py3.6） | 2018-10 |
+| 0.5.0 | KSP 1.8+ | >=3.4（0.5.0）/ >=3.7（0.5.2+） | 2023-03 |
+| 0.5.4 | KSP 1.8+（社区实测配 KSP 1.12） | >=3.7 | 2024-06 |
+| 0.6.0 / 0.7.0 | KSP ≥1.12.5（0.7.0 changelog 原文） | >=3.10 | 2026-07 / 2026-10 |
+
+〔依据：krpc.github.io/krpc/latest/changelog.html；PyPI krpc JSON 元数据；KRPC.MechJeb release 注记〕
+
+三条实测得到的硬约束：
+1. **官方要求客户端与服务端同 release**：0.7.0 客户端握手时协议不符直接报 "Use a client from the same kRPC release as the server"〔实测：本机 krpc 0.7.0 客户端源码 `__init__.py`〕。0.7.0 的 `PROTOCOL_VERSION = 1`，但 0.4.8 客户端**连协议协商字段都没有**（实测解包 0.4.8 sdist），跨大版本混搭不受官方支持。
+2. **0.7.0 客户端默认 `use_pregenerated_stubs=True`**（实测源码），连旧服务端时会用本地新版存根，风险自担。
+3. **GFOLD_KSP 的 cvxpy 0.4.11 把 Python 钉在 ≤3.7**：scipy 需要 ≤1.2.1（1.2.0 移除 `scipy.misc.logsumexp`，而 0.4.11  import 它）；scipy 1.2.1 支持 py3.7 → **Python 3.7 是同时满足 cvxpy 0.4.11 和 krpc>=0.5.4（要求 >=3.7）的最大公约数**。唯一缺口 `scipy.misc.logsumexp` 用一行 shim 补上：`scipy.misc.logsumexp = scipy.special.logsumexp`。
+4. 附带发现：krpc 0.4.8 在 PyPI 只有 sdist 且用 `use_2to3`，现代 setuptools 装不了（与 cvxpy 0.4.11 同病）；protobuf 要钉 `3.20.3`（krpc 0.5.4 的新式生成代码需要 `google.protobuf.internal.builder`，<3.20 没有）。
+
+### 6.2 实测验证（Docker python:3.7 完整镜像）
+
+环境：`setuptools 57.5.0 | numpy 1.19.5 | scipy 1.2.1 | CVXcanon 0.1.0 | ecos 2.0.10 | scs 2.1.2 | cvxpy 0.4.11 | protobuf 3.20.3 | krpc 0.5.4`
+
+```
+shim applied: scipy.misc.logsumexp -> scipy.special.logsumexp
+GFOLD solve OK: tf=49.5 final_mass=2031.8 fuel=268.2 |v_end|=1.98e-12   ← 与 py36 基线数值一致
+krpc client OK: 0.5.4
+PY37 UNIFIED SCHEME: PASS
+```
+
+可复现命令见 `GFOLD_KSP/test_py37_unified.py`。
+
+### 6.3 三个项目的对齐落法
+
+| 项目 | Python 环境 | kRPC 客户端 | 与 0.5.4 mod 混搭风险 |
+|---|---|---|---|
+| RocketRecoveryTutorial | 现代 Python（3.10+） | krpc==0.5.4 | 无——API 全是基础 SpaceCenter（connect/parts.with_name/control）〔依据：源码〕 |
+| cyno-landing | 现代 Python（实测 3.14 装最新版也可） | krpc==0.5.4 | 无——只用 add_stream/姿态/动作组/着陆腿等基础接口〔依据：源码〕 |
+| GFOLD_KSP | **Python 3.7 专用 venv**（shim + 上表 pin） | krpc==0.5.4 | 无（求解器端已实测；游戏内闭环〔待实测〕） |
+
+mod 侧统一装 **kRPC 0.5.4**（支持 KSP 1.8+，KSP 1.12.5 可用〔依据：changelog + 社区注记；待实测确认 1.12.5 上的实际表现〕）。
+若想用更新的 0.7.0 mod（要求 KSP≥1.12.5），则三个客户端都要 0.7.0——但 0.7.0 要求 Python>=3.10，GFOLD 的 cvxpy 0.4.11 装不进 3.10+（scipy≤1.2.1 无 3.10 wheel），**GFOLD 会脱队**。所以 0.5.4 是三项目能同时对齐的版本上限。
+
+### 6.4 官方依据（本节）
+
+- kRPC changelog（KSP 支持矩阵、0.7.0 最低 KSP 1.12.5）：https://krpc.github.io/krpc/latest/changelog.html
+- PyPI krpc 版本与 requires_python：https://pypi.org/pypi/krpc/json
+- 0.7.0 客户端握手/预生成存根行为：本机 site-packages/krpc/__init__.py（krpc 0.7.0）
+- 0.4.8 客户端无协议协商：krpc-0.4.8.zip sdist 解包
