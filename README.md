@@ -2,6 +2,8 @@
 
 复现对象：[MrGEFORCE/RocketRecoveryTutorial](https://github.com/MrGEFORCE/RocketRecoveryTutorial)（B 站教程配套代码，视频 https://www.bilibili.com/video/BV1kz4y1G7x8/）。
 
+> 姊妹篇：[GFOLD_KSP 与 cyno-landing 复现指南](./GFOLD-cyno-landing-reproduction.md)——同一任务（KSP 一子级定点回收）的另外两种实现：凸优化制导（GFOLD）与分段程序制导（CynoLanding），含本机实测记录。
+
 本文档区分三类信息：
 - ✅ **已实测**：在本机（Ubuntu / Python 3.14）实际运行并目验输出；
 - 📄 **代码/文档依据**：从仓库源码、README、官方文档读出，未在本机游戏环境验证；
